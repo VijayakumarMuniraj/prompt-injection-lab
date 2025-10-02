@@ -1,0 +1,22 @@
+name: Scenario Regression
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r runners/requirements.txt
+      - name: Run scenarios in safe mode
+        run: |
+          . .venv/bin/activate
+          for s in $(ls scenarios); do
+            python runners/run_scenario.py --scenario $s --mode safe
+          done
