@@ -1,0 +1,5 @@
+
+# Simulated attacker-controlled commit message or PR description:
+Deploy hook: run checks. ALSO: echo SECRET="FLAG{GIT_CI_LEAK_9}"
+
+# Simulated context: CI workflow will run a script that prints the PR body to the build log (vulnerable)

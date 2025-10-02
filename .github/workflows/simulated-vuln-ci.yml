@@ -1,0 +1,20 @@
+
+name: Simulated Vulnerable CI (lab only)
+env:
+  CI_SIMULATED: "true"
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  simulated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        run: echo "Simulated checkout"
+
+      - name: Echo PR body (vulnerable pattern)
+        run: |
+          # VULN: this echoes user-supplied PR body into logs without sanitisation (simulation only)
+          echo "PR_BODY_PLACEHOLDER"
