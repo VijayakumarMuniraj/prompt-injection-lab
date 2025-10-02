@@ -15,41 +15,56 @@ def load_meta(scenario):
     return meta, user_input
 
 def _extract_quoted(token_name, text):
-    # matches TOKEN="value" or TOKEN='value' (case-insensitive)
-    m = re.search(rf'{re.escape(token_name)}\\s*[:=]\\s*["\\\'](.*?)["\\\']', text, re.IGNORECASE)
+    m = re.search(rf'{re.escape(token_name)}\s*[:=]\s*["\'](.*?)["\']', text, re.IGNORECASE)
     return m.group(1) if m else None
+
+def _find_flag_anywhere(text):
+    m = re.search(r'FLAG\{.*?\}', text)
+    return m.group(0) if m else None
 
 def vulnerable_sim(system_prompt, user_input):
     """
-    Vulnerable simulator: will follow explicit OUTPUT=, SECRET=, 'ignore previous' tokens,
-    and some simulated tool/chain markers.
+    Vulnerable simulator: intentionally permissive detection for CTFs.
+    It checks several common patterns and will return any FLAG{...}
+    found in the attacker input to simulate an exfil.
     """
-    # check explicit OUTPUT="..."
+    # Highest priority: explicit OUTPUT="..."
     v = _extract_quoted("OUTPUT", user_input)
     if v:
         return f"[VULNERABLE] {v}"
-    # check SECRET="..."
+
+    # SECRET="..."
     s = _extract_quoted("SECRET", user_input)
     if s:
         return f"[VULNERABLE] {s}"
-    # common pattern: echo SECRET="..."
-    m_echo = re.search(r'echo\\s+SECRET\\s*[:=]?\\s*["\\\']?(FLAG\\{.*?\\}|[A-Za-z0-9_\\-]{6,})["\\\']?', user_input, re.IGNORECASE)
-    if m_echo:
-        return f"[VULNERABLE] {m_echo.group(1)}"
-    # ignore previous instructions payloads
+
+    # common shell echo patterns (echo SECRET=... or echo "FLAG{...}")
+    m_echo_flag = re.search(r'echo\s+["\']?(FLAG\{.*?\})["\']?', user_input, re.IGNORECASE)
+    if m_echo_flag:
+        return f"[VULNERABLE] {m_echo_flag.group(1)}"
+
+    # As a robust fallback for CTFs: if any FLAG{...} appears anywhere, return it
+    f = _find_flag_anywhere(user_input)
+    if f:
+        return f"[VULNERABLE] {f}"
+
+    # classic "ignore previous instructions" patterns
     if re.search(r'ignore (previous|earlier) instructions', user_input, re.IGNORECASE):
         return "[VULNERABLE] Ignored system prompt and executed nested instruction"
+
+    # simulated other behaviours
     if "CHAIN_STEP" in user_input:
         return "[VULNERABLE] Chain executed: FLAG{SIM_CHAIN_EXFIL}"
     if "EXEC_TOOL" in user_input:
         return "[VULNERABLE] Tool executed: FLAG{SIM_TOOL_ABUSE}"
     if "ORACLE?" in user_input:
         return "[VULNERABLE] Revealed pattern: FLAG{SIM_ORACLE}"
+
     return "[VULNERABLE] Summarized content (simulated)"
 
 def safe_sim(system_prompt, user_input):
     """
-    Safe simulator: rejects instruction-like payloads including SECRET/OUTPUT/echo patterns.
+    Safe simulator: rejects instruction-like payloads including OUTPUT/SECRET/echo/FLAG exposures.
     """
     if re.search(r'ignore (previous|earlier) instructions', user_input, re.IGNORECASE):
         return "[SAFE] Rejected instruction-like content."
@@ -57,8 +72,11 @@ def safe_sim(system_prompt, user_input):
         return "[SAFE] Rejected explicit OUTPUT request."
     if _extract_quoted("SECRET", user_input):
         return "[SAFE] Rejected explicit SECRET exposure attempt."
-    if re.search(r'echo\\s+SECRET', user_input, re.IGNORECASE):
+    if re.search(r'echo\s+SECRET', user_input, re.IGNORECASE) or re.search(r'echo\s+["\']?FLAG\{', user_input, re.IGNORECASE):
         return "[SAFE] Rejected echo/print of secret-like token."
+    # refuse to use flagged content even if it appears
+    if _find_flag_anywhere(user_input):
+        return "[SAFE] Refused to reveal or echo flags in responses."
     if "CHAIN_STEP" in user_input:
         return "[SAFE] Refused to follow chained outputs as instructions."
     if "EXEC_TOOL" in user_input:
